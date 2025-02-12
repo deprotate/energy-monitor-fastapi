@@ -47,3 +47,5 @@ async def report(session: AsyncSession):
             "4": sum_type_2 - sum_type_1
 
         }
+
+
