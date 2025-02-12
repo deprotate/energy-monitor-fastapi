@@ -17,7 +17,7 @@ class Settings(BaseSettings):
         url = "postgresql+asyncpg"+ url[9::]
         return url"""
        # return f"postgresql+asyncpg://{self.postgres_username}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_database}"
-    db_url: str = "postgresql+asyncpg://postgres:utehLuQWFgzYMkDkynqqwpqyNHrGdNjr@postgres.railway.internal:5432/railway"
+    db_url: str = "postgresql+asyncpg://postgres:utehLuQWFgzYMkDkynqqwpqyNHrGdNjr@postgres.railway.internal:5432/railway?sslmode=require"
     echo: bool = True
 
 
