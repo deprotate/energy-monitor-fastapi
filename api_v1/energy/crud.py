@@ -4,6 +4,7 @@ from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from api_v1.core.models.Energy import Energy
+from api_v1.energy.schemas import EnergyResponse
 
 
 #1 - потрачено, 2 - получено 3 -в сеть 4 - из сети
@@ -19,13 +20,19 @@ async def create_energy(session: AsyncSession, energy_data) -> Energy:
 async def get_energy_list(session: AsyncSession) -> list:
     query = select(Energy)
     result = await session.execute(query)
-    return list(result.scalars().all())
+    energy_list = result.scalars().all()
+    return [EnergyResponse(**e.__dict__) for e in energy_list]
 
 
-async def get_energy(session: AsyncSession, energy_id: int) -> Energy | None:
+async def get_energy(session: AsyncSession, energy_id: int) -> EnergyResponse | None:
     query = select(Energy).where(Energy.id == energy_id)
     result = await session.execute(query)
-    return result.scalars().first()
+    energy = result.scalars().first()
+
+    if energy:
+        return EnergyResponse(**energy.__dict__)
+
+    return None
 
 
 async def report(session: AsyncSession):
