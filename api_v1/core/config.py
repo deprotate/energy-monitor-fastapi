@@ -14,8 +14,8 @@ class Settings(BaseSettings):
     @property
     def db_url(self):
         url = os.getenv("DATABASE_URL", "")
-        if url.startswith("postgres://"):
-            url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
         return url
 
     # return f"postgresql+asyncpg://{self.postgres_username}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_database}"
