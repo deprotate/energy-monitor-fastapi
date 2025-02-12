@@ -7,7 +7,7 @@ from api_v1.core.models.Energy import Energy
 from api_v1.energy.schemas import EnergyResponse
 
 
-#1 - потрачено, 2 - получено 3 -в сеть 4 - из сети
+# 1 - потрачено, 2 - получено 3 -в сеть 4 - из сети
 
 async def create_energy(session: AsyncSession, energy_data) -> Energy:
     energy = Energy(**energy_data.dict())
@@ -62,9 +62,9 @@ async def report(session: AsyncSession):
 
 async def get_report_by_range(session: AsyncSession, start_date: datetime, end_date: datetime):
     query = select(
-            func.coalesce(func.sum(Energy.value).filter(Energy.type == 1), 0),
-            func.coalesce(func.sum(Energy.value).filter(Energy.type == 2), 0)
-        ).where(Energy.created_at.between(start_date, end_date))
+        func.coalesce(func.sum(Energy.value).filter(Energy.type == 1), 0),
+        func.coalesce(func.sum(Energy.value).filter(Energy.type == 2), 0)
+    ).where(Energy.created_at.between(start_date, end_date))
 
     result = await session.execute(query)
 
@@ -76,6 +76,7 @@ async def get_report_by_range(session: AsyncSession, start_date: datetime, end_d
         "3": max(sum_type_1 - sum_type_2, 0),
         "4": max(sum_type_2 - sum_type_1, 0),
     }
+
 
 async def get_report_by_date(session: AsyncSession, start_date: datetime, end_date: datetime, group_by: str):
     if group_by == "day":
