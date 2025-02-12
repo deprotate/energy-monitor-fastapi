@@ -10,7 +10,7 @@ class CreateEnergy(BaseModel):
     value: int
 
 
-class EnergySchema(BaseModel):
+class EnergyResponse(BaseModel):
     id: int
     type: int
     value: float
