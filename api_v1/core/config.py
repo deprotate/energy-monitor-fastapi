@@ -13,7 +13,9 @@ class Settings(BaseSettings):
 
     @property
     def db_url(self):
-        return os.getenv("DATABASE_URL")
+        url = os.getenv("DATABASE_URL")
+        url = "postgresql+asyncpg"+ url[9::]
+        return
        # return f"postgresql+asyncpg://{self.postgres_username}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_database}"
 
     echo: bool = True
