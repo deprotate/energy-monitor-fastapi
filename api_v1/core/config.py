@@ -22,5 +22,4 @@ class Settings(BaseSettings):
 
 
 dotenv.load_dotenv()
-print(os.getenv("POSTGRES_DATABASE"))
 settings = Settings()
