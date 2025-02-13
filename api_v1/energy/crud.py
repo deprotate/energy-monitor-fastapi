@@ -81,22 +81,31 @@ async def get_report_by_range(session: AsyncSession, start_date: datetime, end_d
     }
 
 
+from datetime import datetime, timedelta
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from collections import defaultdict
+
 async def get_report_by_date(session: AsyncSession, start_date: datetime, end_date: datetime, group_by: str):
+    # Определяем формат группировки для SQLAlchemy и Python
     if group_by == "day":
-        date_format = "DD.MM.YYYY"
+        date_format_sql = "DD.MM.YYYY"
+        date_format_py = "%d.%m.%Y"
         period_step = timedelta(days=1)
     elif group_by == "month":
-        date_format = "MM.YYYY"
-        period_step = timedelta(days=30)
+        date_format_sql = "MM.YYYY"
+        date_format_py = "%m.%Y"
+        period_step = timedelta(days=31)  # Берём 31 день, чтобы двигаться по месяцам
     elif group_by == "year":
-        date_format = "YYYY"
+        date_format_sql = "YYYY"
+        date_format_py = "%Y"
         period_step = timedelta(days=365)
     else:
         raise ValueError("Некорректное значение group_by")
 
-    group_by_expr = func.to_char(Energy.created_at, date_format)
+    group_by_expr = func.to_char(Energy.created_at, date_format_sql)
 
-
+    # Запрос к базе данных
     query = select(
         group_by_expr.label("period"),
         func.coalesce(func.sum(Energy.value).filter(Energy.type == 1), 0).label("consumption"),
@@ -111,26 +120,43 @@ async def get_report_by_date(session: AsyncSession, start_date: datetime, end_da
 
     result = await session.execute(query)
 
+    # Заполняем существующие данные
+    existing_periods = {
+        period: {
+            "1": consumption,
+            "2": production,
+            "3": max(consumption - production, 0),
+            "4": max(production - consumption, 0),
+        }
+        for period, consumption, production in result.all()
+    }
 
-    existing_periods = {period: {"1": consumption, "2": production, "3": max(consumption - production, 0), "4": max(production - consumption, 0)}
-                        for period, consumption, production in result.all()}
-
-    # Функция для генерации всех периодов в нужном диапазоне
-    def generate_periods(start_date, end_date, period_step):
+    # Генерация всех возможных периодов
+    def generate_periods(start_date, end_date, period_step, date_format_py):
         periods = []
-        current_date = start_date
+        current_date = start_date.replace(day=1) if group_by == "month" else start_date
         while current_date <= end_date:
-            period = current_date.strftime(date_format)
+            period = current_date.strftime(date_format_py)
             periods.append(period)
-            current_date += period_step
+            if group_by == "month":
+                # Смещаемся к первому числу следующего месяца
+                next_month = current_date.month % 12 + 1
+                next_year = current_date.year + (1 if next_month == 1 else 0)
+                current_date = current_date.replace(year=next_year, month=next_month, day=1)
+            elif group_by == "year":
+                # Смещаемся на 1 января следующего года
+                current_date = current_date.replace(year=current_date.year + 1, month=1, day=1)
+            else:
+                # По дням
+                current_date += period_step
         return periods
 
+    all_periods = generate_periods(start_date, end_date, period_step, date_format_py)
 
-    all_periods = generate_periods(start_date, end_date, period_step)
+    # Заполняем отсутствующие периоды нулями
+    report = {
+        period: existing_periods.get(period, {"1": 0, "2": 0, "3": 0, "4": 0})
+        for period in all_periods
+    }
 
-    # Объединяем существующие и пустые периоды
-    report = defaultdict(lambda: {"1": 0, "2": 0, "3": 0, "4": 0})
-    for period in all_periods:
-        report[period] = existing_periods.get(period, {"1": 0, "2": 0, "3": 0, "4": 0})
-
-    return dict(report)
+    return report
