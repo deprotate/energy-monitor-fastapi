@@ -20,12 +20,6 @@ class Settings(BaseSettings):
         elif url.startswith("postgresql://"):
             url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-        if "?" not in url:
-            url += "?ssl=true"
-        else:
-            url += "&ssl=require"
-        return url
-
         print("_____________________________\n",
               "_____________________________\n",
               url, "Here is my async url"
