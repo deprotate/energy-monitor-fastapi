@@ -41,7 +41,10 @@ async def report_by_date(
     session: AsyncSession = Depends(db_helper.session_dependency)
 ):
     start_date = datetime.strptime(start_date, "%Y-%m-%d")
+    end_date = end_date.strip("/")
     end_date = datetime.strptime(end_date, "%Y-%m-%d")
+    print(end_date)
+
 
     if group_by is None:
         return await crud.get_report_by_range(session, start_date, end_date)
