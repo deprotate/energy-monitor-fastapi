@@ -33,7 +33,7 @@ async def report(session: AsyncSession = Depends(db_helper.session_dependency)):
     return await crud.report(session=session)
 
 
-@energy_router.get("/report_by_date")
+@energy_router.get("/report_by_date/")
 async def report_by_date(
     start_date: str,
     end_date: str,
