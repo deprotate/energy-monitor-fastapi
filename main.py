@@ -34,5 +34,5 @@ async def ping() -> str:
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host=settings.host, port=int(settings.port), reload=False)
+    uvicorn.run("main:app", host=settings.host, port=int("8000"), reload=False)
 
