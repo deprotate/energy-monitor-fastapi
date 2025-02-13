@@ -23,7 +23,7 @@ class Settings(BaseSettings):
         if "?" not in url:
             url += "?ssl=true"
         else:
-            url += "&ssl=true"
+            url += "&ssl=require"
         return url
 
         print("_____________________________\n",
