@@ -15,7 +15,16 @@ class Settings(BaseSettings):
     def db_url(self):
         url = os.getenv("DATABASE_URL", "postgresql://postgres:bvLdusGmHleiyfhjsgGnPzMyTTGRzWll@postgres.railway.internal:5432/railway")
 
-        url = url.replace("postgresql://", "postgresql+asyncpg://", 1) + "?sslmode=require"
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif url.startswith("postgresql://"):
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+        if "?" not in url:
+            url += "?ssl=true"
+        else:
+            url += "&ssl=true"
+        return url
 
         print("_____________________________\n",
               "_____________________________\n",
