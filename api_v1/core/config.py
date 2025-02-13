@@ -16,6 +16,12 @@ class Settings(BaseSettings):
         url = os.getenv("DATABASE_URL", "")
 
         url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+        print("_____________________________\n",
+              "_____________________________\n",
+              url, "Here is my async url"
+              "_____________________________\n",
+              "_____________________________\n",)
         return url
 
     # return f"postgresql+asyncpg://{self.postgres_username}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_database}"
