@@ -1,4 +1,5 @@
-from datetime import datetime
+from collections import defaultdict
+from datetime import datetime, timedelta
 
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,8 +62,7 @@ async def report(session: AsyncSession):
 
 
 async def get_report_by_range(session: AsyncSession, start_date: datetime, end_date: datetime):
-    print(f"Получен запрос: start_date={start_date}, end_date={end_date}")
-    
+
     query = select(
         func.coalesce(func.sum(Energy.value).filter(Energy.type == 1), 0),
         func.coalesce(func.sum(Energy.value).filter(Energy.type == 2), 0)
@@ -70,10 +70,8 @@ async def get_report_by_range(session: AsyncSession, start_date: datetime, end_d
     session.expire_all()
 
     result = await session.execute(query)
-    print(f"Результат запроса: {result}")
 
     sum_type_1, sum_type_2 = result.one()
-    session.close()
 
     return {
         "1": sum_type_1,
@@ -86,14 +84,18 @@ async def get_report_by_range(session: AsyncSession, start_date: datetime, end_d
 async def get_report_by_date(session: AsyncSession, start_date: datetime, end_date: datetime, group_by: str):
     if group_by == "day":
         date_format = "DD.MM.YYYY"
+        period_step = timedelta(days=1)
     elif group_by == "month":
         date_format = "MM.YYYY"
+        period_step = timedelta(days=30)
     elif group_by == "year":
         date_format = "YYYY"
+        period_step = timedelta(days=365)
     else:
         raise ValueError("Некорректное значение group_by")
 
     group_by_expr = func.to_char(Energy.created_at, date_format)
+
 
     query = select(
         group_by_expr.label("period"),
@@ -109,12 +111,26 @@ async def get_report_by_date(session: AsyncSession, start_date: datetime, end_da
 
     result = await session.execute(query)
 
-    report = {}
-    for period, sum_type_1, sum_type_2 in result.all():
-        report[period] = {
-            "1": sum_type_1,
-            "2": sum_type_2,
-            "3": max(sum_type_1 - sum_type_2, 0),
-            "4": max(sum_type_2 - sum_type_1, 0),
-        }
-    return report
+
+    existing_periods = {period: {"1": consumption, "2": production, "3": max(consumption - production, 0), "4": max(production - consumption, 0)}
+                        for period, consumption, production in result.all()}
+
+    # Функция для генерации всех периодов в нужном диапазоне
+    def generate_periods(start_date, end_date, period_step):
+        periods = []
+        current_date = start_date
+        while current_date <= end_date:
+            period = current_date.strftime(date_format)
+            periods.append(period)
+            current_date += period_step
+        return periods
+
+
+    all_periods = generate_periods(start_date, end_date, period_step)
+
+    # Объединяем существующие и пустые периоды
+    report = defaultdict(lambda: {"1": 0, "2": 0, "3": 0, "4": 0})
+    for period in all_periods:
+        report[period] = existing_periods.get(period, {"1": 0, "2": 0, "3": 0, "4": 0})
+
+    return dict(report)
