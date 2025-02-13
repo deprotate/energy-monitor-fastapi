@@ -61,12 +61,16 @@ async def report(session: AsyncSession):
 
 
 async def get_report_by_range(session: AsyncSession, start_date: datetime, end_date: datetime):
+    print(f"Получен запрос: start_date={start_date}, end_date={end_date}")
+    
     query = select(
         func.coalesce(func.sum(Energy.value).filter(Energy.type == 1), 0),
         func.coalesce(func.sum(Energy.value).filter(Energy.type == 2), 0)
     ).where(Energy.created_at.between(start_date, end_date))
+    session.expire_all()
 
     result = await session.execute(query)
+    print(f"Результат запроса: {result}")
 
     sum_type_1, sum_type_2 = result.one()
     session.close()
