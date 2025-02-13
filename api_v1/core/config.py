@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     def db_url(self):
         url = os.getenv("DATABASE_URL", "")
 
-        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1) + "?sslmode=require"
 
         print("_____________________________\n",
               "_____________________________\n",
