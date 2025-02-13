@@ -69,6 +69,7 @@ async def get_report_by_range(session: AsyncSession, start_date: datetime, end_d
     result = await session.execute(query)
 
     sum_type_1, sum_type_2 = result.one()
+    session.close()
 
     return {
         "1": sum_type_1,
