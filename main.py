@@ -4,6 +4,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from api_v1.core.DbHelper import db_helper
+from api_v1.core.config import settings
 from api_v1.core.models.Base import Base
 from api_v1.energy.views import energy_router
 
@@ -24,5 +25,6 @@ async def ping() -> str:
     return "OK"
 
 
-if __name__ == '__main__':
-    uvicorn.run(app)
+if __name__ == "__main__":
+    uvicorn.run("main:app", host=settings.host, port=int(settings.port), reload=False)
+
