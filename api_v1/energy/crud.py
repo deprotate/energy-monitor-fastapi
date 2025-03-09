@@ -221,7 +221,7 @@ async def predict_report_by_range(
         start_date: datetime,
         end_date: datetime,
         solar_coefficient: float,
-        average_consumpion: float,
+        average_consumpion: int,
         longitude: float,
         latitude: float
 ) -> dict:
@@ -264,7 +264,7 @@ async def predict_report_by_range(
         # Для каждого будущего дня суммируем прогнозы
         for idx, row in forecast_future.iterrows():
             # Получаем прогнозированное значение irradiance и умножаем на solar_coefficient
-            predicted_production = row['yhat'] * solar_coefficient
+            predicted_production = int(row['yhat'] * solar_coefficient)
             future_production += predicted_production
             future_consumption += average_consumpion
 
@@ -275,8 +275,8 @@ async def predict_report_by_range(
     return {
         "1": total_consumption,
         "2": total_production,
-        "3": max(total_consumption - total_production, 0),
-        "4": max(total_production - total_consumption, 0),
+        "3": max(int(total_consumption - total_production), 0),
+        "4": max(int(total_production - total_consumption), 0),
     }
 
     # Если group_by != None, действуем по принципу get_report_by_date,
@@ -290,7 +290,7 @@ async def predict_report_by_date(
         end_date: datetime,
         group_by: str | None,  # Если group_by is None, будем считать сумму как выше
         solar_coefficient: float,
-        average_consumpion: float,
+        average_consumpion: int,
         longitude: float,
         latitude: float
 ) -> dict:
@@ -326,7 +326,9 @@ async def predict_report_by_date(
         )
         result = await session.execute(query)
         existing_periods = {
-            period: {"1": consumption, "2": production, "3": max(consumption - production, 0),
+            period: {"1": consumption,
+                     "2": production,
+                     "3": max(consumption - production, 0),
                      "4": max(production - consumption, 0)}
             for period, consumption, production in result.all()
         }
@@ -368,7 +370,7 @@ async def predict_report_by_date(
         forecast_future = model.predict(future_df)
         # Создаем словарь прогнозов: period_str -> прогнозированное значение * solar_coefficient
         forecast_dict = {
-            dt.strftime(date_format_py): row['yhat'] * solar_coefficient
+            dt.strftime(date_format_py): int(row['yhat'] * solar_coefficient)
             for dt, (_, row) in zip(future_data, forecast_future.iterrows())
         }
     else:
@@ -379,8 +381,8 @@ async def predict_report_by_date(
             existing_periods[period] = {
                 "1": average_consumpion,
                 "2": forecast_dict[period],
-                "3": max(average_consumpion - forecast_dict[period], 0),
-                "4": max(forecast_dict[period] - average_consumpion, 0),
+                "3": max(int(average_consumpion - forecast_dict[period]), 0),
+                "4": max(int(forecast_dict[period] - average_consumpion), 0),
             }
         else:
             if period not in existing_periods:
