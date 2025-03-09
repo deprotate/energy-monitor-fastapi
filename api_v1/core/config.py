@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     @property
     def db_url(self):
         ### ____________________________
-        deploy: str = "local" # УЛЬТРАКОСТЫЛЬ НАДО ИСПРАВИТЬ
+        deploy: str = "external" # УЛЬТРАКОСТЫЛЬ НАДО ИСПРАВИТЬ
         ### _____________________________
         if deploy == "external":
             url = os.getenv("DATABASE_URL",
