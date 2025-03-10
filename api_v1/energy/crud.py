@@ -1,3 +1,4 @@
+import calendar
 import pickle
 from datetime import datetime, timedelta
 from sqlalchemy import func
@@ -6,7 +7,7 @@ from sqlalchemy.future import select
 from api_v1.core.models.Energy import Energy
 from api_v1.energy.schemas import EnergyResponse
 import prophet
-
+import pandas as pd
 
 # 1 - потрачено, 2 - получено 3 -в сеть 4 - из сети
 
@@ -226,7 +227,7 @@ async def predict_report_by_range(
         latitude: float
 ) -> dict:
     now_date = datetime.now().date()
-    import pandas as pd
+
     # Разбиваем период на прошлую (до сегодняшнего дня включительно) и будущую (после сегодняшнего дня)
     past_end_date = min(end_date, datetime.combine(now_date, datetime.min.time()))
     future_start_date = max(start_date, datetime.combine(now_date + timedelta(days=1), datetime.min.time()))
@@ -257,18 +258,14 @@ async def predict_report_by_range(
 
         model = get_model(longitude=longitude, latitude=latitude)
 
-        # Создаём DataFrame с будущими датами для прогноза
 
         future_df = pd.DataFrame({'ds': future_days})
         forecast_future = model.predict(future_df)
-        # Для каждого будущего дня суммируем прогнозы
         for idx, row in forecast_future.iterrows():
-            # Получаем прогнозированное значение irradiance и умножаем на solar_coefficient
             predicted_production = int(row['yhat'] * solar_coefficient)
             future_production += predicted_production
             future_consumption += average_consumpion
 
-    # Общие суммы
     total_consumption = past_consumption + future_consumption
     total_production = past_production + future_production
 
@@ -279,113 +276,153 @@ async def predict_report_by_range(
         "4": max(int(total_production - total_consumption), 0),
     }
 
-    # Если group_by != None, действуем по принципу get_report_by_date,
-    # но для будущих периодов подставляем прогнозные значения.
-    # Здесь приведём схожий подход, как в get_report_by_date, с генерацией всех периодов.
 
 
-async def predict_report_by_date(
-        session: AsyncSession,
-        start_date: datetime,
-        end_date: datetime,
-        group_by: str | None,  # Если group_by is None, будем считать сумму как выше
-        solar_coefficient: float,
-        average_consumpion: int,
-        longitude: float,
-        latitude: float
-) -> dict:
-    now_date = datetime.now().date()
+def generate_period_ranges(start_date: datetime, end_date: datetime, group_by: str):
+    ranges = []
     if group_by == "day":
-        date_format_sql = "DD.MM.YYYY"
-        date_format_py = "%d.%m.%Y"
-        period_step = timedelta(days=1)
+        current = start_date.date()
+        while current <= end_date.date():
+            period_start = datetime.combine(current, datetime.min.time())
+            period_end = datetime.combine(current, datetime.max.time())
+            label = current.strftime("%d.%m.%Y")
+            ranges.append((label, period_start, period_end))
+            current += timedelta(days=1)
     elif group_by == "month":
-        date_format_sql = "MM.YYYY"
-        date_format_py = "%m.%Y"
-        period_step = timedelta(days=31)  # плюс минус, хотя мб подправить надо @Д
+        current = start_date.replace(day=1)
+        while current <= end_date:
+            year = current.year
+            month = current.month
+            last_day = calendar.monthrange(year, month)[1]
+            period_start = current
+            # Устанавливаем конец периода как последний день месяца (с макс. временем)
+            period_end = current.replace(day=last_day, hour=23, minute=59, second=59)
+            if period_end > end_date:
+                period_end = end_date
+            label = current.strftime("%m.%Y")
+            ranges.append((label, period_start, period_end))
+            # Переходим к первому числу следующего месяца
+            if month == 12:
+                current = current.replace(year=year+1, month=1, day=1)
+            else:
+                current = current.replace(month=month+1, day=1)
     elif group_by == "year":
-        date_format_sql = "YYYY"
-        date_format_py = "%Y"
-        period_step = timedelta(days=365)
+        current = start_date.replace(month=1, day=1)
+        while current <= end_date:
+            year = current.year
+            period_start = current
+            period_end = current.replace(month=12, day=31, hour=23, minute=59, second=59)
+            if period_end > end_date:
+                period_end = end_date
+            label = current.strftime("%Y")
+            ranges.append((label, period_start, period_end))
+            current = current.replace(year=year+1, month=1, day=1)
     else:
         raise ValueError("Некорректное значение group_by")
+    return ranges
 
-    if start_date > datetime.combine(now_date, datetime.min.time()):
-        existing_periods = {}
-    else:
+async def predict_report_by_date(
+    session: AsyncSession,
+    start_date: datetime,
+    end_date: datetime,
+    group_by: str | None,
+    solar_coefficient: float,
+    average_consumpion: int,
+    longitude: float,
+    latitude: float
+) -> dict:
+    now_date = datetime.now().date()
+
+    period_ranges = generate_period_ranges(start_date, end_date, group_by)
+
+
+    past_periods = []
+    future_periods = []
+    for label, p_start, p_end in period_ranges:
+        if p_end.date() <= now_date:
+            past_periods.append((label, p_start, p_end))
+        elif p_start.date() > now_date:
+            future_periods.append((label, p_start, p_end))
+        else:
+            # Если период пересекается с текущей датой, разделяем его:
+            past_periods.append((label, p_start, datetime.combine(now_date, datetime.max.time())))
+            future_periods.append((label, datetime.combine(now_date + timedelta(days=1), datetime.min.time()), p_end))
+
+    past_data = {}
+    if past_periods:
+        past_start = min(p[1] for p in past_periods)
+        past_end = max(p[2] for p in past_periods)
+        # Используем to_char для группировки по нужному формату:
+        if group_by == "day":
+            date_format_sql = "DD.MM.YYYY"
+        elif group_by == "month":
+            date_format_sql = "MM.YYYY"
+        elif group_by == "year":
+            date_format_sql = "YYYY"
+        expr = func.to_char(Energy.created_at, date_format_sql)
+
         query = select(
-            func.to_char(Energy.created_at, date_format_sql).label("period"),
+            expr.label("period"),
             func.coalesce(func.sum(Energy.value).filter(Energy.type == 1), 0).label("consumption"),
             func.coalesce(func.sum(Energy.value).filter(Energy.type == 2), 0).label("production"),
         ).where(
-            Energy.created_at.between(start_date, datetime.combine(now_date, datetime.min.time()))
+            Energy.created_at.between(past_start, past_end)
         ).group_by(
-            func.to_char(Energy.created_at, date_format_sql)
+            expr
         ).order_by(
-            func.to_char(Energy.created_at, date_format_sql)
+            expr
         )
+
         result = await session.execute(query)
-        existing_periods = {
-            period: {"1": consumption,
-                     "2": production,
-                     "3": max(consumption - production, 0),
-                     "4": max(production - consumption, 0)}
+        past_data = {
+            period: {
+                "1": consumption,
+                "2": production,
+                "3": max(consumption - production, 0),
+                "4": max(production - consumption, 0)
+            }
             for period, consumption, production in result.all()
         }
 
-        # Генерируем все периоды в запрошенном диапазоне
-
-    def generate_periods(start_date, end_date, period_step, date_format_py):
-        periods = []
-        current_date = start_date
-        while current_date <= end_date:
-            periods.append(current_date.strftime(date_format_py))
-            current_date += period_step
-        return periods
-
-    all_periods = generate_periods(start_date, end_date, period_step, date_format_py)
-    # Определяем будущие периоды (те, чья дата > сегодня)
-    future_periods = []
-    for period in all_periods:
-        try:
-            period_date = datetime.strptime(period, date_format_py).date()
-        except Exception:
-            continue
-        if period_date > now_date:
-            future_periods.append(period)
-
-    # Загружаем модель для ближайшего города, как и ранее
-    model = get_model(longitude, latitude)
-    future_data = []
-    # Здесь для упрощения считаем, что период соответствует одной дате, полученной как начало периода.
-    for period in future_periods:
-        try:
-            period_date = datetime.strptime(period, date_format_py)
-        except Exception:
-            continue
-        future_data.append(period_date)
-    import pandas as pd
-    if future_data:
-        future_df = pd.DataFrame({'ds': future_data})
-        forecast_future = model.predict(future_df)
-        # Создаем словарь прогнозов: period_str -> прогнозированное значение * solar_coefficient
-        forecast_dict = {
-            dt.strftime(date_format_py): int(row['yhat'] * solar_coefficient)
-            for dt, (_, row) in zip(future_data, forecast_future.iterrows())
-        }
-    else:
-        forecast_dict = {}
-
-    for period in all_periods:
-        if period in forecast_dict:
-            existing_periods[period] = {
-                "1": average_consumpion,
-                "2": forecast_dict[period],
-                "3": max(int(average_consumpion - forecast_dict[period]), 0),
-                "4": max(int(forecast_dict[period] - average_consumpion), 0),
+    future_data = {}
+    if future_periods:
+        model = get_model(longitude, latitude)
+        for label, p_start, p_end in future_periods:
+            days = pd.date_range(start=p_start, end=p_end, freq='D')
+            if len(days) == 0:
+                forecast_sum = 0
+            else:
+                future_df = pd.DataFrame({'ds': days})
+                forecast = model.predict(future_df)
+                forecast_sum = forecast['yhat'].sum() * solar_coefficient
+            # Потребление – среднее потребление умноженное на число дней
+            consumption_value = average_consumpion * len(days)
+            future_data[label] = {
+                "1": consumption_value,
+                "2": int(forecast_sum),
+                "3": max(consumption_value - int(forecast_sum), 0),
+                "4": max(int(forecast_sum) - consumption_value, 0)
             }
-        else:
-            if period not in existing_periods:
-                existing_periods[period] = {"1": 0, "2": 0, "3": 0, "4": 0}
 
-    return existing_periods
+    result_dict = {}
+    for label, _, _ in period_ranges:
+        if label in past_data and label in future_data:
+            consumption = past_data[label]["1"] + future_data[label]["1"]
+            production = past_data[label]["2"] + future_data[label]["2"]
+        elif label in past_data:
+            consumption = past_data[label]["1"]
+            production = past_data[label]["2"]
+        elif label in future_data:
+            consumption = future_data[label]["1"]
+            production = future_data[label]["2"]
+        else:
+            consumption = production = 0
+        result_dict[label] = {
+            "1": consumption,
+            "2": production,
+            "3": max(consumption - production, 0),
+            "4": max(production - consumption, 0)
+        }
+
+    return result_dict
+
