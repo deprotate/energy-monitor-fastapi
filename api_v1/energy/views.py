@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Body, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,9 +37,10 @@ async def report(session: AsyncSession = Depends(db_helper.session_dependency)):
 
 @energy_router.get("/report_by_date/")
 async def report_by_date(
-    start_date: str,
-    end_date: str,
-    group_by: str | None = None,
+    start_date: str  = "2025-02-14",
+    end_date: str = "2025-03-14",
+    group_by: Annotated[Literal["day", "month", "year"] | None, Query(title="Group periods by day/month/year" )] = None,
+
     session: AsyncSession = Depends(db_helper.session_dependency)
 ):
     start_date = datetime.strptime(start_date, "%Y-%m-%d")
