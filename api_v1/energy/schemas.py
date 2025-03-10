@@ -26,3 +26,4 @@ class PredictIn(BaseModel):
     longitude: Annotated[float, Field(examples=[37.62])] = 37.62
     latitude: Annotated[float, Field(examples=[55.75])] = 55.75
     group_by: Annotated[Literal["day", "month", "year"] | None, Field(title="Group periods by day/month/year" )] = None
+
