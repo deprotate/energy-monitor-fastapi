@@ -204,7 +204,7 @@ def get_model(longitude, latitude):
     if city_info is None:
         raise ValueError("Не удалось определить ближайший город.")
     city_lon, city_lat, city_name = city_info
-    model_filename = f'api_v1/energy/ml_models/{city_lon:.2f}-{city_lat:.2f}-{city_name}_prophet_model.pkl'
+    model_filename = f'api_v1/energy/ml_models/{round(city_lon,2)}-{round(city_lat,2)}-{city_name}_prophet_model.pkl'
     try:
         with open(model_filename, 'rb') as f:
             model = pickle.load(f)
