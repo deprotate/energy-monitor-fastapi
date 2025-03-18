@@ -64,11 +64,11 @@ async def predict_report(
     if predict_in.group_by is None:
         return await crud.predict_report_by_range(session=session, start_date=start_date, end_date=end_date,
                                                   solar_coefficient=settings.solar_coefficient,
-                                                  average_consumpion=settings.average_consumption,
+                                                  average_consumption_by_months=settings.average_consumption_by_months,
                                                   longitude=predict_in.longitude, latitude=predict_in.latitude)
     else:
         return await crud.predict_report_by_date(session=session, start_date=start_date, end_date=end_date,
                                                  group_by=predict_in.group_by,
                                                  solar_coefficient=settings.solar_coefficient,
-                                                 average_consumpion=settings.average_consumption,
+                                                 average_consumption_by_months=settings.average_consumption_by_months,
                                                  longitude=predict_in.longitude, latitude=predict_in.latitude)
