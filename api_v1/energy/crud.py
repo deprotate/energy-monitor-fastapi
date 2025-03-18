@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+
+from api_v1.core.config import settings
 from api_v1.core.models.Energy import Energy
 from api_v1.energy.schemas import EnergyResponse
 import prophet
@@ -114,6 +116,7 @@ async def get_report_by_date(session: AsyncSession, start_date: datetime, end_da
         }
         for period, consumption, production in result.all()
     }
+
     def generate_periods(start_date, end_date, period_step, date_format_py):
         periods = []
         current_date = start_date.replace(day=1) if group_by == "month" else start_date
@@ -141,52 +144,8 @@ async def get_report_by_date(session: AsyncSession, start_date: datetime, end_da
     return report
 
 
-cities = [
-    [37.62, 55.75, "Moscow"],
-    [30.32, 59.93, "Saint Petersburg"],
-    [82.93, 55.04, "Novosibirsk"],
-    [60.60, 56.84, "Yekaterinburg"],
-    [43.93, 56.30, "Nizhny Novgorod"],
-    [49.12, 55.79, "Kazan"],
-    [61.40, 55.16, "Chelyabinsk"],
-    [73.37, 54.99, "Omsk"],
-    [50.15, 53.20, "Samara"],
-    [39.70, 47.23, "Rostov-on-Don"],
-    [55.95, 54.73, "Ufa"],
-    [92.87, 56.01, "Krasnoyarsk"],
-    [56.25, 58.01, "Perm"],
-    [39.20, 51.67, "Voronezh"],
-    [44.50, 48.70, "Volgograd"],
-    [38.97, 45.05, "Krasnodar"],
-    [46.02, 51.53, "Saratov"],
-    [65.53, 57.15, "Tyumen"],
-    [49.42, 53.52, "Tolyatti"],
-    [53.22, 56.85, "Izhevsk"],
-    [83.78, 53.35, "Barnaul"],
-    [104.28, 52.29, "Irkutsk"],
-    [135.07, 48.48, "Khabarovsk"],
-    [131.92, 43.12, "Vladivostok"],
-    [47.50, 42.98, "Makhachkala"],
-    [48.39, 54.32, "Ulyanovsk"],
-    [55.10, 51.77, "Orenburg"],
-    [86.09, 55.36, "Kemerovo"],
-    [87.11, 53.76, "Novokuznetsk"],
-    [39.72, 54.62, "Ryazan"],
-    [48.04, 46.35, "Astrakhan"],
-    [45.00, 53.20, "Penza"],
-    [49.66, 58.60, "Kirov"],
-    [47.25, 56.13, "Cheboksary"],
-    [37.62, 54.20, "Tula"],
-    [20.52, 54.72, "Kaliningrad"],
-    [34.37, 53.25, "Bryansk"],
-    [36.19, 51.73, "Kursk"],
-    [39.73, 43.59, "Sochi"],
-    [41.97, 45.05, "Stavropol"]
-]
-
-
 # мб города из енва получать, хотя так пизже выглядит
-def get_nearest_city(longitude: float, latitude: float, cities_list: list):
+def get_nearest_city(longitude: float, latitude: float, cities_list: list = settings.cities):
     best = None
     best_diff = float('inf')
     for city in cities_list:
@@ -199,12 +158,11 @@ def get_nearest_city(longitude: float, latitude: float, cities_list: list):
 
 
 def get_model(longitude, latitude):
-    global cities
-    city_info = get_nearest_city(longitude, latitude, cities)
+    city_info = get_nearest_city(longitude, latitude)
     if city_info is None:
         raise ValueError("Не удалось определить ближайший город.")
     city_lon, city_lat, city_name = city_info
-    model_filename = f'api_v1/energy/ml_models/{round(city_lon,2)}-{round(city_lat,2)}-{city_name}_prophet_model.pkl'
+    model_filename = f'api_v1/energy/ml_models/{round(city_lon, 2)}-{round(city_lat, 2)}-{city_name}_prophet_model.pkl'
     try:
         with open(model_filename, 'rb') as f:
             model = pickle.load(f)
@@ -218,7 +176,7 @@ async def predict_report_by_range(
         start_date: datetime,
         end_date: datetime,
         solar_coefficient: float,
-        average_consumpion: int,
+        average_consumption_by_months: dict,
         longitude: float,
         latitude: float
 ) -> dict:
@@ -253,13 +211,11 @@ async def predict_report_by_range(
 
         future_df = pd.DataFrame({'ds': future_days})
         forecast_future = model.predict(future_df)
-        for idx, row in forecast_future.iterrows():
-            predicted_production = int(row['yhat'] * solar_coefficient)
-            future_production += predicted_production
-            future_consumption += average_consumpion
+        future_consumption = forecast_future['yhat'].sum() * solar_coefficient
+        future_production = sum(average_consumption_by_months.get(day.month, 500) for day in future_days)
 
-    total_consumption = past_consumption + future_consumption
-    total_production = past_production + future_production
+    total_consumption = int(past_consumption + future_consumption)
+    total_production = int(past_production + future_production)
 
     return {
         "1": total_consumption,
@@ -323,7 +279,7 @@ async def predict_report_by_date(
         end_date: datetime,
         group_by: str,
         solar_coefficient: float,
-        average_consumpion: int,
+        average_consumption_by_months: dict,
         longitude: float,
         latitude: float
 ) -> dict:
@@ -383,19 +339,20 @@ async def predict_report_by_date(
     if future_periods:
         model = get_model(longitude, latitude)
         for label, p_start, p_end in future_periods:
-            days = pd.date_range(start=p_start, end=p_end, freq='D')
-            if len(days) == 0:
-                forecast_sum = 0
+            future_days = pd.date_range(start=p_start, end=p_end, freq='D')
+            if len(future_days) == 0:
+                future_production = 0
+                future_consumption = 0
             else:
-                future_df = pd.DataFrame({'ds': days})
+                future_df = pd.DataFrame({'ds': future_days})
                 forecast = model.predict(future_df)
-                forecast_sum = forecast['yhat'].sum() * solar_coefficient
-            consumption_value = average_consumpion * len(days)
+                future_production = forecast['yhat'].sum() * solar_coefficient
+                future_consumption = sum(average_consumption_by_months.get(day.month, 500) for day in future_days)
             future_data[label] = {
-                "1": consumption_value,
-                "2": int(forecast_sum),
-                "3": max(consumption_value - int(forecast_sum), 0),
-                "4": max(int(forecast_sum) - consumption_value, 0)
+                "1": future_consumption,
+                "2": int(future_production),
+                "3": max(future_consumption - int(future_production), 0),
+                "4": max(int(future_production) - future_consumption, 0)
             }
 
     result_dict = {}
@@ -418,3 +375,44 @@ async def predict_report_by_date(
             "4": max(production - consumption, 0)
         }
     return result_dict
+
+# if __name__ == "__main__":
+#     future_start_date = "2025-01-01"
+#     end_date = "2026-01-01"
+#     solar_coefficient = 293.0
+#     future_production = 0
+#     future_consumption = 0
+#     past_consumption = 0
+#     past_production = 0
+#     average_consumpion = 500
+#     future_start_date = datetime.strptime("2025-01-01", "%Y-%m-%d")
+#     end_date = "2026-01-01".strip("/")
+#     end_date = datetime.strptime(end_date, "%Y-%m-%d")
+#     if future_start_date <= end_date:
+#         future_days = []
+#         current = future_start_date
+#         while current <= end_date:
+#             future_days.append(current)
+#             current += timedelta(days=1)
+#
+#         #model = get_model(longitude=37.13, latitude=55.15)
+#
+#         future_df = pd.DataFrame({'ds': future_days})
+#         print(future_df)
+#         forecast_future = model.predict(future_df)
+#         print(forecast_future)
+#         for idx, row in forecast_future.iterrows():
+#             predicted_production = int(row['yhat'] * solar_coefficient)
+#             future_production += predicted_production
+#             future_consumption += average_consumpion
+#
+#     total_consumption = past_consumption + future_consumption
+#     total_production = past_production + future_production
+#
+#     rez = {
+#         "1": total_consumption,
+#         "2": total_production,
+#         "3": max(int(total_consumption - total_production), 0),
+#         "4": max(int(total_production - total_consumption), 0),
+#     }
+#     print(rez)
