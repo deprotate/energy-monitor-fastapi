@@ -18,8 +18,7 @@ class Settings(BaseSettings):
         ### _____________________________
         if self.deploy == "external":
             url = os.getenv("DATABASE_URL",
-                            "postgresql://postgres:bvLdusGmHleiyfhjsgGnPzMyTTGRzWll@postgres.railway.internal:5432"
-                            "/railway")
+                            "postgresql://neondb_owner:npg_I3DtiqA4KvLo@ep-summer-mud-a4dhfqol-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require")
 
             if url.startswith("postgres://"):
                 url = url.replace("postgres://", "postgresql+asyncpg://", 1)
